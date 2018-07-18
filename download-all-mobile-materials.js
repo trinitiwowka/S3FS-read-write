@@ -25,7 +25,7 @@ const exampleResponse = {
     Metadata: {},
     Body: "<Buffer 7b 0a 20 20 20 22 6e 61 6d 65 22 3a 20... >"
 };
-const lastUpdatedTime = fs.readFileSync('last-updated-time.txt','utf8');
+const lastUpdatedTime = fs.readFileSync('last-updated-time.txt', 'utf8');
 const fsImpl = new S3FS('test-bucket', config);
 
 fs.mkdir('mobile-materials', async function (data) {
@@ -37,7 +37,9 @@ fs.mkdir('mobile-materials', async function (data) {
             Promise.map(dirs, function (dir) {
                 return new Promise((resolve, reject) => {
 
+                    let emptyDir = false;
                     if (!fs.existsSync(dir)) {
+                        emptyDir = true;
                         fs.mkdirSync(dir);
                     }
 
@@ -48,9 +50,11 @@ fs.mkdir('mobile-materials', async function (data) {
                         }
                         console.log('start dir', dir);
 
-                        await files.forEach(async file => {
+                        files.forEach(async file => {
+                            let emptyFile = await !fs.existsSync(path.join(dir, file));
                             let headFile = await fsImpl.headObject(path.join(dir, file));
-                            if (lastUpdatedTime < (new Date(headFile.LastModified)).getTime()) {
+
+                            if (lastUpdatedTime < (new Date(headFile.LastModified)).getTime() || emptyDir || emptyFile) {
                                 let dataFile = await fsImpl.readFile(path.join(dir, file));
                                 console.log('        Downloading.....    ', path.join(dir, file));
                                 await fs.writeFileSync(path.join(dir, file), dataFile.Body);
@@ -62,8 +66,8 @@ fs.mkdir('mobile-materials', async function (data) {
                 })
 
             }, {concurrency: 1}).then(() => {
-                console.log('FINALLL');
                 fs.writeFileSync('last-updated-time.txt', Date.now());
+                console.log('---ALL SYNCHRONIZED---');
             });
         });
 }, function (reason) {

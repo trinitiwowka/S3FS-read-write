@@ -10,42 +10,37 @@ const config = {
 };
 
 var S3FS = require('s3fs'),
+    fsImpl = new S3FS('test-bucket', config),
     Promise = require("bluebird"),
     fs = Promise.promisifyAll(require("fs")),
     path = require('path'),
-    fsImpl = new S3FS('test-bucket', config),
     baseDir = path.join('mobile-materials'),
     dirs = [];
 
-fsImpl.mkdirp('mobile-materials').then(function (data) {
+fs.mkdir('mobile-materials', async function (data) {
     console.log('mobile-materials Created');
-
-    fs.readdirAsync(baseDir).map(function (filename) {
-        let fileErr = path.resolve(baseDir, filename)
-        let stat = fs.statSync(fileErr);
-        if (!stat || !stat.isDirectory()) {
-            return;
-        }
+    await fsImpl.readdir(baseDir).map(function (filename) {
         dirs.push(path.join(baseDir, filename));
     })
         .then(function () {
             Promise.map(dirs, function (dir) {
                 return new Promise((resolve, reject) => {
 
-                    fs.readdir(dir, (err, files) => {
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir);
+                    }
+
+                    fsImpl.readdir(dir, (err, files) => {
                         if (!files) {
                             console.log('dir is empty');
                             return;
                         }
                         console.log('start dir', dir);
 
-                        files.forEach(file => {
-                            let dataFile = fs.readFileSync(path.join(dir, file));
-                            console.log('        Uploading.....    ', path.join(dir, file));
-                            fsImpl.writeFile(path.join(dir, file), dataFile, (err) => {
-                                if (err) throw err;
-                                // console.log('The file has been saved!');
-                            });
+                        files.forEach(async file => {
+                            let dataFile = await fsImpl.readFile(path.join(dir, file));
+                            console.log('        Downloading.....    ', path.join(dir, file));
+                            fs.writeFileSync(path.join(dir, file), dataFile.Body);
                         });
 
                         resolve();

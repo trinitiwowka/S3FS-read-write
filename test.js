@@ -1,9 +1,11 @@
-var fs = require('fs');
 var S3FS = require('s3fs');
+var Promise   = require("bluebird"),
+    fs        = Promise.promisifyAll(require("fs"));
+var path = require('path');
 
 const config = {
     sslEnabled: false,
-    endpoint: 'http://127.0.0.1:8000',
+    endpoint: 'http://127.0.0.1:8001',
     signatureCache: false,
     signatureVersion: 'v4',
     region: 'us-east-1',
@@ -11,40 +13,47 @@ const config = {
     accessKeyId: 'accessKey1',
     secretAccessKey: 'verySecretKey1',
 };
+
 var fsImpl = new S3FS('test-bucket', config);
+var baseDir = path.join('mobile-materials');
+var dirs = [];
+fsImpl.mkdirp('mobile-materials').then(function(data) {
+    console.log('mobile-materials Created');
+    fs.readdirAsync(baseDir).map(function (filename) {
+        let fileErr = path.resolve(baseDir,filename)
+        let stat = fs.statSync(fileErr);
+        if (!stat || !stat.isDirectory()) {
+            return;
+        }
+        dirs.push(path.join(baseDir,filename));
+    }).then(function () {
+        Promise.map(dirs, function (dir) {
+            return new Promise((resolve, reject) => {
 
-var walk = function(dir, done) {
-    var results = [];
-    fs.readdir(dir, function(err, list) {
-        if (err) return done(err);
-        var i = 0;
-        (function next() {
-            var file = list[i++];
-            if (!file) return done(null, results);
-            file = dir + '/' + file;
-            fs.stat(file, function(err, stat) {
-                if (stat && stat.isDirectory()) {
-                    walk(file, function(err, res) {
-                        results = results.concat(res);
-                        next();
+                fs.readdir(dir, (err, files) => {
+                    if (!files) {
+                        console.log('dir is empty');
+                        return;
+                    }
+                    console.log('start dir',dir);
+
+                    files.forEach(file => {
+                        let dataFile = fs.readFileSync(path.join(dir,file));
+                        fsImpl.writeFile(path.join(dir,file), dataFile, (err) => {
+                            if (err) throw err;
+                            console.log('The file has been saved!');
+                        });
                     });
-                } else {
-                    results.push(file);
-                    next();
-                }
-            });
-        })();
-    });
-};
 
-walk('mobile-materials', function(err, results) {
-    if (err) throw err;
-    console.log(results);
+                    resolve();
+                })
+            })
 
-    results.forEach(path => {
-        fsImpl.writeFile(path, fs.readFileSync(path), (err) => {
-            if (err) throw err;
-            console.log(`The file ${file} has been saved!`);
+        }, {concurrency: 1}).then(function () {
         });
+    }).then(function(){
+
     });
+}, function(reason) {
+    console.log('something went wrong', reason);
 });
